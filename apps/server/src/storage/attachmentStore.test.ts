@@ -89,6 +89,28 @@ test('流式写入超限时中止且不留临时文件', async () => {
   assert.deepEqual(readdirSync(join(store.root, 'tmp')), []);
 });
 
+/**
+ * 上面那条单跑一次抓不住真正的问题：临时文件的 open 是异步的，而超限是在流中间抛的，
+ * **第一块就超限**时清理有可能跑在 open 完成之前——unlink 拿到 ENOENT 被吞掉，
+ * 紧接着 open 才把文件建出来，于是漏下一个空文件。
+ *
+ * 这条竞态只在机器忙的时候输：本机跑几百遍都是绿的，CI 上偶发红一次。所以这里连着
+ * 跑 200 遍，用次数把概率压出来——回归了的话本机也该能抓到。
+ */
+test('第一块就超限时也不留临时文件（open 与清理的竞态）', async () => {
+  const store = newStore(64);
+  const tmpDir = join(store.root, 'tmp');
+
+  for (let i = 0; i < 200; i++) {
+    await assert.rejects(
+      () => store.putStream(Readable.from([Buffer.alloc(4096)])),
+      AttachmentTooLargeError,
+    );
+  }
+
+  assert.deepEqual(readdirSync(tmpDir), [], '漏下的空文件没有任何东西会去清理它');
+});
+
 test('恰好等于上限的内容可以写入', async () => {
   const store = newStore(1024);
   const { size } = await store.putBuffer(Buffer.alloc(1024));
