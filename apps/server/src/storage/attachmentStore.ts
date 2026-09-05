@@ -1,5 +1,12 @@
 import { createHash, randomBytes } from 'node:crypto';
-import { createReadStream, createWriteStream, existsSync, mkdirSync, statSync } from 'node:fs';
+import {
+  createReadStream,
+  createWriteStream,
+  existsSync,
+  mkdirSync,
+  statSync,
+  type WriteStream,
+} from 'node:fs';
 import { rename, rm, unlink } from 'node:fs/promises';
 import { isAbsolute, join, resolve, sep } from 'node:path';
 import type { Readable } from 'node:stream';
@@ -85,14 +92,15 @@ export class AttachmentStore {
     if (existsSync(target)) return { sha256, size: bytes.byteLength, deduped: true };
 
     const tmp = this.#tmpPath();
+    const sink = createWriteStream(tmp);
     try {
       mkdirSync(join(this.root, sha256.slice(0, 2)), { recursive: true });
       await pipeline(async function* () {
         yield bytes;
-      }, createWriteStream(tmp));
+      }, sink);
       await this.#commit(tmp, target);
     } finally {
-      await unlink(tmp).catch(() => {});
+      await discard(tmp, sink);
     }
     return { sha256, size: bytes.byteLength, deduped: false };
   }
@@ -104,6 +112,7 @@ export class AttachmentStore {
   async putStream(source: Readable): Promise<StoredBlob> {
     const hash = createHash('sha256');
     const tmp = this.#tmpPath();
+    const sink = createWriteStream(tmp);
     let size = 0;
     const maxBytes = this.maxBytes;
 
@@ -118,7 +127,7 @@ export class AttachmentStore {
           hash.update(bytes);
           yield bytes;
         }
-      }, createWriteStream(tmp));
+      }, sink);
 
       const sha256 = hash.digest('hex');
       const target = this.pathFor(sha256);
@@ -128,7 +137,7 @@ export class AttachmentStore {
       await this.#commit(tmp, target);
       return { sha256, size, deduped: false };
     } finally {
-      await unlink(tmp).catch(() => {});
+      await discard(tmp, sink);
     }
   }
 
@@ -189,4 +198,26 @@ export function sanitizeFilename(name: string | null | undefined, fallback = 'at
     .trim();
   if (!cleaned || cleaned === '.' || cleaned === '..' || isAbsolute(cleaned)) return fallback;
   return cleaned.length > 200 ? cleaned.slice(0, 200) : cleaned;
+}
+
+/**
+ * 删掉临时文件——但要等写入流真的关掉之后。
+ *
+ * `createWriteStream` 的 open 是**异步**的，而超限判定发生在流的中间：
+ * 第一块就超上限时，抛错到 `finally` 可能比 open 完成还早。那时 `unlink` 拿到
+ * ENOENT 被吞掉，紧接着 open 才把文件建出来——磁盘上于是留下一个空的半截文件，
+ * 谁也不会再碰它。
+ *
+ * 这条竞态在 CI 上以「不留半截临时文件」偶发失败的形式暴露出来（本机跑几百遍都
+ * 复现不了，runner 负载高的时候才输）。但它不是测试的问题：生产上每一次超限下载
+ * 都会漏一个文件进 `data/attachments/tmp/`，而那个目录没有任何东西会去清理它。
+ *
+ * `pipeline` 出错时会 destroy 这个流，destroy 完必定发 `close`（fs.WriteStream 的
+ * autoDestroy 默认开着），所以等 `close` 不会把自己等死。
+ */
+async function discard(tmp: string, sink: WriteStream): Promise<void> {
+  if (!sink.closed) {
+    await new Promise<void>((resolve) => sink.once('close', resolve));
+  }
+  await unlink(tmp).catch(() => {});
 }
