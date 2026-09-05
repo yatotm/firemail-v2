@@ -2,7 +2,7 @@ import type { Health } from '@firemail/shared';
 import type { FastifyInstance } from 'fastify';
 import { ok } from '../http/reply.ts';
 
-export const VERSION = '2.1.0';
+export const VERSION = '2.1.1';
 
 /**
  * 健康检查。免鉴权，且**不碰数据库**：

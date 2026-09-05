@@ -1,6 +1,6 @@
 {
   "name": "@firemail/migrate-legacy",
-  "version": "2.1.0",
+  "version": "2.1.1",
   "private": true,
   "type": "module",
   "description": "花火邮箱 v1 (huohuo_email.db) → v2 数据迁移与校验 CLI",
