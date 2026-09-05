@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { after, test } from 'node:test';
 import type { Account, UserSettings } from '@firemail/shared';
+import { eq } from 'drizzle-orm';
+import { accounts } from '../db/schema.ts';
 import {
   authed,
   cleanupScratch,
@@ -132,6 +134,57 @@ test('建号请求里带了间隔也不算数——账号上没有单独的间�
       }),
     );
     assert.equal(created.syncIntervalSeconds, 300, '应当用全局值 300，而不是请求里的 60');
+  });
+});
+
+/**
+ * 改完设置要**立刻**换到新节奏。
+ *
+ * 调度器把「下次什么时候到期」缓存在进程内的 #dueAt 里。只改库不清缓存的话，
+ * 它还揣着按旧间隔算出来的时刻，最长要等一整个**旧**周期走完才生效——
+ * 900 改成 300 时尤其别扭：用户改短就是想让邮件来得更快，系统却先把那 15 分钟
+ * 慢慢走完，看起来就像设置根本没生效。
+ */
+test('改完间隔立刻按新值重排，不用等上一轮走完', async () => {
+  await withApp(async (t) => {
+    const user = seedUser(t.db);
+    const session = await login(t, user);
+    const id = seedAccount(t, user.id, { email: 'a@outlook.com' });
+
+    // 跑一轮，让调度器把这个账号的到期时刻算出来并缓存
+    await t.ctx.scheduler.tick();
+    const before = t.ctx.scheduler.dueAt(id);
+    assert.ok(before !== undefined, '第一轮之后应当有排期');
+
+    await setInterval_(t, session, 900);
+
+    // 缓存被清掉了，下一个 tick 会按 900 秒重算
+    assert.equal(t.ctx.scheduler.dueAt(id), undefined, '旧排期没被清掉');
+  });
+});
+
+test('把间隔改短时账号会提前到期，而不是先把旧周期走完', async () => {
+  await withApp(async (t) => {
+    const user = seedUser(t.db);
+    const session = await login(t, user);
+    const now = Date.now();
+    // 刚同步过 2 分钟：按 900 秒还早得很，按 60 秒早就该再同步了
+    const id = seedAccount(t, user.id, { email: 'a@outlook.com' });
+    t.db
+      .update(accounts)
+      .set({ lastSyncedAt: new Date(now - 120_000) })
+      .where(eq(accounts.id, id))
+      .run();
+
+    await setInterval_(t, session, 900);
+    await t.ctx.scheduler.tick();
+    const far = t.ctx.scheduler.dueAt(id) as number;
+    assert.ok(far > now + 600_000, `按 900 秒应当还有十几分钟，实际 ${String(far - now)}ms`);
+
+    await setInterval_(t, session, 60);
+    await t.ctx.scheduler.tick();
+    const near = t.ctx.scheduler.dueAt(id) as number;
+    assert.ok(near < far, '改短之后应当提前，而不是原地不动');
   });
 });
 

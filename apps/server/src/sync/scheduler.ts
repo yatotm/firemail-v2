@@ -414,6 +414,22 @@ export class SyncScheduler {
     this.#dueAt.set(accountId, this.#options.now());
   }
 
+  /**
+   * 丢掉这些账号的排期，下一个 tick 按库里**当前**的间隔重新算。
+   *
+   * 用户在设置里改了同步间隔就该立刻生效，而 `#dueAt` 是进程内缓存——不清掉的话
+   * 它还揣着按旧间隔算出来的到期时刻，最长要等一整个**旧**周期走完才换到新节奏。
+   * 900 改成 300 时这尤其别扭：用户改短就是想让邮件来得更快，系统却先把那 15 分钟
+   * 慢慢走完，看起来就像设置没生效。
+   *
+   * 清掉之后 `#dueFor` 会重算成 `last_synced_at + 新间隔`：改长则往后推，改短则
+   * 往前提，已经超出新间隔的当场到期。一批账号同时到期不要紧，后台层本来就是串行的，
+   * 它们会按账号间隔一个一个走。
+   */
+  resetSchedule(accountIds: readonly number[]): void {
+    for (const id of accountIds) this.#dueAt.delete(id);
+  }
+
   suspension(accountId: number): AccountSuspension | null {
     return this.#suspensions.get(accountId);
   }
