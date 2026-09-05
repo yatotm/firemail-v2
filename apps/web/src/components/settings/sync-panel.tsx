@@ -40,7 +40,7 @@ export function SyncPanel() {
     <div className="divide-y">
       <SettingBlock
         title="同步间隔"
-        description={`所有账号统一使用这个间隔，保存后立即对已有账号生效。允许 ${SYNC_INTERVAL_HINT}。账号多的时候别调太短：29 个账号串行跑一圈约 250 秒，间隔小于它就永远追不上。`}
+        description={`所有账号统一使用这个间隔，保存后立即生效——不用等当前这一轮走完。允许 ${SYNC_INTERVAL_HINT}。账号多的时候别调太短：29 个账号串行跑一圈约 250 秒，间隔小于它就永远追不上。`}
       >
         <div className="flex items-end gap-2">
           <TextField

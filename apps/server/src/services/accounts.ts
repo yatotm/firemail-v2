@@ -91,13 +91,18 @@ export class AccountService {
    * 同步间隔是全局的：调度器读的仍然是 accounts.sync_interval_seconds 那一列，
    * 而这个方法保证那一列永远等于用户设置里的值。让调度器反过来去查设置也行，
    * 但那样每个 tick 都要为每个账号解一次 JSON，而这件事一天也发生不了一次。
+   *
+   * 返回被改到的账号 id：调用方要拿它去把调度器里那份按旧间隔算的排期清掉，
+   * 否则改完还得等一整个旧周期才生效。
    */
-  setSyncInterval(userId: number, seconds: number): void {
-    this.#db
+  setSyncInterval(userId: number, seconds: number): number[] {
+    return this.#db
       .update(accounts)
       .set({ syncIntervalSeconds: seconds, updatedAt: new Date(this.#now()) })
       .where(eq(accounts.userId, userId))
-      .run();
+      .returning({ id: accounts.id })
+      .all()
+      .map((row) => row.id);
   }
 
   list(userId: number, query: AccountListQuery = {}): Account[] {

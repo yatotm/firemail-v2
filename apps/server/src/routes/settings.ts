@@ -29,7 +29,10 @@ export function registerSettingsRoutes(app: FastifyInstance, ctx: AppContext): v
       （旧版这个值存下来之后没有任何地方读它，改了完全没效果）。
     */
     if (patch.syncIntervalSeconds !== undefined) {
-      ctx.accounts.setSyncInterval(auth.user.id, next.syncIntervalSeconds);
+      const affected = ctx.accounts.setSyncInterval(auth.user.id, next.syncIntervalSeconds);
+      // 光改库不够：调度器把「下次什么时候到期」缓存在进程内，不清掉的话它还揣着
+      // 按旧间隔算出来的时刻，最长要等一整个**旧**周期才换到新节奏。
+      ctx.scheduler.resetSchedule(affected);
     }
     return ok(next);
   });
