@@ -16,7 +16,7 @@
     "@fastify/cookie": "^11.0.2",
     "@fastify/cors": "^10.0.2",
     "@fastify/multipart": "^9.0.3",
-    "@fastify/rate-limit": "^10.2.2",
+    "@fastify/rate-limit": "^11.2.0",
     "@fastify/static": "^10.1.3",
     "@firemail/shared": "workspace:*",
     "better-sqlite3": "^11.8.1",
