@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.7
 # FireMail v2 —— 单镜像：Fastify 同时提供 API 和已构建的前端静态资源，只监听一个端口。
 
-ARG NODE_IMAGE=node:22-alpine
+ARG NODE_IMAGE=node:22.23.4-alpine
 
 # ---------------------------------------------------------------------------
 # base：统一 pnpm / registry 设置
