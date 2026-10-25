@@ -75,6 +75,9 @@ export abstract class BaseMailProvider implements MailProvider {
       greetingTimeout: this.#timeouts.greetingMs,
       socketTimeout: this.#timeouts.socketMs,
     });
+    // 库会关闭连接并拒绝 connect/命令 Promise；error 事件还可能在关闭后迟到。
+    // 监听器随 client 保留，避免重复事件退出进程，重试仍由同步层负责。
+    client.on('error', () => {});
 
     try {
       await client.connect();
